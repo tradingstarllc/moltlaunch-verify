@@ -3,15 +3,21 @@ const router = express.Router();
 const db = require('../db');
 const { generateChallengeCode, generateChallengeToken } = require('../lib/challenges');
 const { verifyChallengeOnForum, fetchUrl } = require('../lib/colosseum');
-const { anchorLevelChange, buildMemo } = require('../lib/solana');
+const { anchorLevelChange, buildMemo, anchorMemo } = require('../lib/solana');
+const { getBehavioralFingerprint } = require('../lib/behavioral');
+const { readDevicePDA, createBinding, anchorBinding } = require('../lib/depin');
+const { generateChallenge, verifyChallenge, anchorMobileVerification } = require('../lib/mobile');
 
 const LEVEL_DESCRIPTIONS = {
   0: 'Agent registered on MoltLaunch. Proves ability to make HTTP requests. Does NOT prove identity or uniqueness.',
   1: 'Agent confirmed identity via Colosseum forum challenge. Proves agent controls a Colosseum API key.',
-  2: 'Agent verified infrastructure. Proves agent controls a live API endpoint with our verification token.'
+  2: 'Agent verified infrastructure. Proves agent controls a live API endpoint with our verification token.',
+  3: 'Agent behavioral identity computed. Proves agent has a unique behavioral fingerprint based on activity history. Sybil detection included.',
+  4: 'Agent bound to DePIN hardware device. Proves agent is associated with a verified physical device on Solana (Nosana/Helium/io.net).',
+  5: 'Agent verified via Solana Mobile seed vault. Proves agent runs on a specific physical device with hardware-protected keys. Strongest verification level.'
 };
 
-const LEVEL_LABELS = { 0: 'registered', 1: 'confirmed', 2: 'verified' };
+const LEVEL_LABELS = { 0: 'registered', 1: 'confirmed', 2: 'verified', 3: 'behavioral', 4: 'hardware', 5: 'mobile' };
 
 const TERMS_TEXT = `MoltLaunch Self-Verify Terms of Service (v1.0)
 
@@ -351,6 +357,394 @@ router.post('/verify', async (req, res) => {
     });
   } catch (error) {
     console.error('Verification error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /api/self-verify/behavioral — Behavioral fingerprint verification (L3)
+ */
+router.post('/behavioral', async (req, res) => {
+  try {
+    const { agentId } = req.body;
+
+    if (!agentId) {
+      return res.status(400).json({ error: 'agentId is required' });
+    }
+
+    const agent = db.getAgent(agentId);
+    if (!agent) {
+      return res.status(404).json({ error: 'Agent not found. Register first at POST /api/self-verify' });
+    }
+
+    if (agent.revoked) {
+      return res.status(403).json({ error: 'Agent verification has been revoked' });
+    }
+
+    if (agent.level < 2) {
+      return res.status(400).json({
+        error: 'Agent must be L2 (verified) before L3 behavioral verification.',
+        currentLevel: agent.level,
+        currentLabel: LEVEL_LABELS[agent.level],
+        requiredLevel: 2
+      });
+    }
+
+    if (agent.level >= 3) {
+      const ext = db.getExtendedVerification(agentId);
+      return res.status(200).json({
+        success: true,
+        message: 'Agent already at L3 or higher',
+        agentId,
+        level: agent.level,
+        levelLabel: LEVEL_LABELS[agent.level],
+        levelDescription: LEVEL_DESCRIPTIONS[agent.level],
+        fingerprint: ext ? ext.fingerprint : null,
+        uniquenessScore: ext ? ext.fingerprint_uniqueness : null
+      });
+    }
+
+    // Try to get behavioral fingerprint
+    const result = getBehavioralFingerprint(agentId);
+
+    if (!result) {
+      return res.status(404).json({
+        error: 'No behavioral data found for this agent',
+        hint: 'Behavioral fingerprinting requires forum activity history. Your agent must have posts on the Colosseum forum to generate a fingerprint.',
+        agentId
+      });
+    }
+
+    const { fingerprint, features, uniquenessScore, postCount, source } = result;
+
+    // Sybil detection
+    if (uniquenessScore < 0.3) {
+      db.addSybilSignal(agentId, 'behavioral_similarity', `uniqueness=${uniquenessScore}`);
+    }
+
+    // Store in DB and upgrade to L3
+    db.setBehavioral(agentId, {
+      fingerprint,
+      uniqueness: uniquenessScore,
+      features
+    });
+
+    db.addAuditLog(agentId, 'behavioral', {
+      source,
+      fingerprint,
+      uniquenessScore,
+      postCount
+    }, db.hashIp(req.ip));
+
+    // On-chain anchoring (non-blocking)
+    const memo = buildMemo(agentId, 3, 'behavioral');
+    anchorLevelChange(agentId, 3, 'behavioral').then(sig => {
+      if (sig) db.updateOnChainSig(agentId, sig);
+      else db.addPendingAnchor(agentId, memo);
+    }).catch(err => {
+      console.error('[solana] Anchor error (non-blocking):', err.message);
+      db.addPendingAnchor(agentId, memo);
+    });
+
+    res.json({
+      success: true,
+      agentId,
+      level: 3,
+      levelLabel: 'behavioral',
+      levelDescription: LEVEL_DESCRIPTIONS[3],
+      fingerprint,
+      uniquenessScore,
+      features: {
+        timing: features.timing,
+        content: features.content,
+        topics: features.topics
+      },
+      source,
+      postCount,
+      sybilFlag: uniquenessScore < 0.3 ? 'POTENTIAL_SYBIL' : null,
+      nextStep: {
+        action: 'Bind to DePIN hardware device (L4)',
+        instructions: [
+          'Call POST /api/self-verify/depin with your agentId, provider, and devicePDA',
+          'Supported providers: nosana, helium, mock (for testing)',
+          'devicePDA must be a valid Solana public key of a DePIN device account'
+        ],
+        depinEndpoint: 'POST /api/self-verify/depin'
+      }
+    });
+  } catch (error) {
+    console.error('Behavioral verification error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /api/self-verify/depin — DePIN device binding (L4)
+ */
+router.post('/depin', async (req, res) => {
+  try {
+    const { agentId, provider, devicePDA } = req.body;
+
+    if (!agentId) {
+      return res.status(400).json({ error: 'agentId is required' });
+    }
+    if (!provider) {
+      return res.status(400).json({ error: 'provider is required (nosana, helium, or mock)' });
+    }
+    if (!devicePDA) {
+      return res.status(400).json({ error: 'devicePDA is required (Solana public key of device account)' });
+    }
+
+    const validProviders = ['nosana', 'helium', 'mock'];
+    if (!validProviders.includes(provider)) {
+      return res.status(400).json({
+        error: `Invalid provider. Must be one of: ${validProviders.join(', ')}`,
+        provided: provider
+      });
+    }
+
+    const agent = db.getAgent(agentId);
+    if (!agent) {
+      return res.status(404).json({ error: 'Agent not found. Register first.' });
+    }
+
+    if (agent.revoked) {
+      return res.status(403).json({ error: 'Agent verification has been revoked' });
+    }
+
+    if (agent.level < 3) {
+      return res.status(400).json({
+        error: 'Agent must be L3 (behavioral) before L4 hardware binding.',
+        currentLevel: agent.level,
+        currentLabel: LEVEL_LABELS[agent.level],
+        requiredLevel: 3
+      });
+    }
+
+    if (agent.level >= 4) {
+      const ext = db.getExtendedVerification(agentId);
+      return res.status(200).json({
+        success: true,
+        message: 'Agent already at L4 or higher',
+        agentId,
+        level: agent.level,
+        levelLabel: LEVEL_LABELS[agent.level],
+        levelDescription: LEVEL_DESCRIPTIONS[agent.level],
+        depinProvider: ext ? ext.depin_provider : null,
+        devicePDA: ext ? ext.depin_device_pda : null
+      });
+    }
+
+    // Read the device PDA from Solana
+    let deviceResult;
+    try {
+      deviceResult = await readDevicePDA(provider, devicePDA);
+    } catch (err) {
+      return res.status(400).json({
+        error: 'Failed to read device PDA',
+        details: err.message,
+        hint: provider === 'mock'
+          ? 'Mock provider should always work. This is unexpected.'
+          : 'Ensure the devicePDA is a valid Solana public key of an existing account on mainnet.'
+      });
+    }
+
+    // Create binding
+    const binding = createBinding(agentId, deviceResult);
+
+    // Anchor on-chain (non-blocking)
+    let onChainResult = null;
+    try {
+      onChainResult = await anchorBinding(binding);
+    } catch (e) {
+      console.error('[depin] Anchor error:', e.message);
+    }
+
+    // Store in DB
+    db.setHardware(agentId, {
+      provider: binding.depinProvider,
+      devicePDA: binding.devicePDA,
+      bindingHash: binding.bindingHash,
+      onChainSig: onChainResult ? onChainResult.signature : null
+    });
+
+    db.addAuditLog(agentId, 'depin_binding', {
+      provider,
+      devicePDA,
+      bindingHash: binding.bindingHash,
+      isReal: deviceResult.isReal,
+      onChainSig: onChainResult ? onChainResult.signature : null
+    }, db.hashIp(req.ip));
+
+    res.json({
+      success: true,
+      agentId,
+      level: 4,
+      levelLabel: 'hardware',
+      levelDescription: LEVEL_DESCRIPTIONS[4],
+      binding: {
+        provider: binding.depinProvider,
+        devicePDA: binding.devicePDA,
+        bindingHash: binding.bindingHash,
+        isReal: deviceResult.isReal,
+        verificationMethod: binding.verificationMethod,
+        notes: binding.verificationNotes
+      },
+      deviceData: binding.deviceData,
+      onChainSig: onChainResult ? onChainResult.signature : null,
+      explorerUrl: onChainResult ? onChainResult.explorerUrl : null,
+      nextStep: {
+        action: 'Mobile seed vault verification (L5)',
+        instructions: [
+          '1. Request a challenge: GET /api/self-verify/mobile/challenge?agentId=YOUR_ID',
+          '2. Sign the challenge with your Solana Mobile seed vault device key',
+          '3. Submit: POST /api/self-verify/mobile with agentId, challengeResponse (base64), devicePubkey'
+        ],
+        challengeEndpoint: 'GET /api/self-verify/mobile/challenge',
+        verifyEndpoint: 'POST /api/self-verify/mobile'
+      }
+    });
+  } catch (error) {
+    console.error('DePIN binding error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * GET /api/self-verify/mobile/challenge — Request a challenge for L5 mobile verification
+ */
+router.get('/mobile/challenge', (req, res) => {
+  try {
+    const agentId = req.query.agentId;
+
+    if (!agentId) {
+      return res.status(400).json({ error: 'agentId query parameter is required' });
+    }
+
+    const agent = db.getAgent(agentId);
+    if (!agent) {
+      return res.status(404).json({ error: 'Agent not found.' });
+    }
+
+    if (agent.level < 4) {
+      return res.status(400).json({
+        error: 'Agent must be L4 (hardware) before L5 mobile verification.',
+        currentLevel: agent.level,
+        currentLabel: LEVEL_LABELS[agent.level],
+        requiredLevel: 4
+      });
+    }
+
+    const { challenge, expiresAt } = generateChallenge(agentId);
+
+    res.json({
+      success: true,
+      agentId,
+      challenge,
+      expiresAt,
+      expiresIn: '5 minutes',
+      instructions: [
+        'Sign this challenge string with your Solana Mobile seed vault device key (Ed25519)',
+        'The message to sign is the challenge hex string as UTF-8 bytes',
+        'Submit the base64-encoded signature to POST /api/self-verify/mobile'
+      ]
+    });
+  } catch (error) {
+    console.error('Mobile challenge error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /api/self-verify/mobile — Mobile seed vault verification (L5)
+ */
+router.post('/mobile', async (req, res) => {
+  try {
+    const { agentId, challengeResponse, devicePubkey } = req.body;
+
+    if (!agentId) {
+      return res.status(400).json({ error: 'agentId is required' });
+    }
+    if (!challengeResponse) {
+      return res.status(400).json({ error: 'challengeResponse is required (base64-encoded Ed25519 signature)' });
+    }
+    if (!devicePubkey) {
+      return res.status(400).json({ error: 'devicePubkey is required (Solana public key string)' });
+    }
+
+    const agent = db.getAgent(agentId);
+    if (!agent) {
+      return res.status(404).json({ error: 'Agent not found.' });
+    }
+
+    if (agent.revoked) {
+      return res.status(403).json({ error: 'Agent verification has been revoked' });
+    }
+
+    if (agent.level < 4) {
+      return res.status(400).json({
+        error: 'Agent must be L4 (hardware) before L5 mobile verification.',
+        currentLevel: agent.level,
+        currentLabel: LEVEL_LABELS[agent.level],
+        requiredLevel: 4
+      });
+    }
+
+    if (agent.level >= 5) {
+      const ext = db.getExtendedVerification(agentId);
+      return res.status(200).json({
+        success: true,
+        message: 'Agent already at L5 (mobile)',
+        agentId,
+        level: 5,
+        levelLabel: 'mobile',
+        levelDescription: LEVEL_DESCRIPTIONS[5],
+        devicePubkey: ext ? ext.mobile_device_pubkey : null
+      });
+    }
+
+    // Verify the signature
+    const verification = verifyChallenge(agentId, challengeResponse, devicePubkey);
+
+    if (!verification.valid) {
+      return res.status(400).json({
+        error: 'Mobile verification failed',
+        details: verification.error
+      });
+    }
+
+    // Anchor on-chain (non-blocking)
+    let onChainResult = null;
+    try {
+      onChainResult = await anchorMobileVerification(agentId, devicePubkey);
+    } catch (e) {
+      console.error('[mobile] Anchor error:', e.message);
+    }
+
+    // Store in DB
+    db.setMobile(agentId, {
+      devicePubkey,
+      onChainSig: onChainResult ? onChainResult.signature : null
+    });
+
+    db.addAuditLog(agentId, 'mobile_verify', {
+      devicePubkey,
+      onChainSig: onChainResult ? onChainResult.signature : null
+    }, db.hashIp(req.ip));
+
+    res.json({
+      success: true,
+      agentId,
+      level: 5,
+      levelLabel: 'mobile',
+      levelDescription: LEVEL_DESCRIPTIONS[5],
+      verified: true,
+      devicePubkey,
+      onChainSig: onChainResult ? onChainResult.signature : null,
+      explorerUrl: onChainResult ? onChainResult.explorerUrl : null
+    });
+  } catch (error) {
+    console.error('Mobile verification error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

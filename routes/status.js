@@ -5,10 +5,13 @@ const db = require('../db');
 const LEVEL_DESCRIPTIONS = {
   0: 'Agent registered on MoltLaunch. Proves ability to make HTTP requests. Does NOT prove identity or uniqueness.',
   1: 'Agent confirmed identity via Colosseum forum challenge. Proves agent controls a Colosseum API key.',
-  2: 'Agent verified infrastructure. Proves agent controls a live API endpoint with our verification token.'
+  2: 'Agent verified infrastructure. Proves agent controls a live API endpoint with our verification token.',
+  3: 'Agent behavioral identity computed. Proves agent has a unique behavioral fingerprint based on activity history. Sybil detection included.',
+  4: 'Agent bound to DePIN hardware device. Proves agent is associated with a verified physical device on Solana (Nosana/Helium/io.net).',
+  5: 'Agent verified via Solana Mobile seed vault. Proves agent runs on a specific physical device with hardware-protected keys. Strongest verification level.'
 };
 
-const LEVEL_LABELS = { 0: 'registered', 1: 'confirmed', 2: 'verified' };
+const LEVEL_LABELS = { 0: 'registered', 1: 'confirmed', 2: 'verified', 3: 'behavioral', 4: 'hardware', 5: 'mobile' };
 
 /**
  * Format agent data for public response (strips sensitive fields)
@@ -18,7 +21,7 @@ function publicAgentResponse(agent) {
 
   const isExpired = agent.expires_at && new Date(agent.expires_at) < new Date();
 
-  return {
+  const response = {
     agentId: agent.id,
     name: agent.name,
     description: agent.description,
@@ -36,6 +39,39 @@ function publicAgentResponse(agent) {
     expired: isExpired,
     revoked: !!agent.revoked
   };
+
+  // Add extended verification data for L3+
+  if (agent.level >= 3) {
+    const ext = db.getExtendedVerification(agent.id);
+    if (ext) {
+      if (ext.fingerprint) {
+        response.behavioral = {
+          fingerprint: ext.fingerprint,
+          uniquenessScore: ext.fingerprint_uniqueness,
+          verifiedAt: ext.behavioral_at
+        };
+      }
+      if (ext.depin_provider) {
+        response.hardware = {
+          provider: ext.depin_provider,
+          devicePDA: ext.depin_device_pda,
+          bindingHash: ext.depin_binding_hash,
+          onChainSig: ext.depin_on_chain_sig,
+          verifiedAt: ext.hardware_at
+        };
+      }
+      if (ext.mobile_verified) {
+        response.mobile = {
+          devicePubkey: ext.mobile_device_pubkey,
+          verified: true,
+          onChainSig: ext.mobile_on_chain_sig,
+          verifiedAt: ext.mobile_at
+        };
+      }
+    }
+  }
+
+  return response;
 }
 
 /**
@@ -84,26 +120,8 @@ router.get('/agent/:id', (req, res) => {
     }
 
     // Public lookup — no challenge codes or tokens
-    const isExpired = agent.expires_at && new Date(agent.expires_at) < new Date();
-
-    res.json({
-      agentId: agent.id,
-      name: agent.name,
-      description: agent.description,
-      capabilities: agent.capabilities ? JSON.parse(agent.capabilities) : null,
-      level: agent.level,
-      levelLabel: LEVEL_LABELS[agent.level],
-      levelDescription: LEVEL_DESCRIPTIONS[agent.level],
-      apiEndpoint: agent.api_endpoint,
-      codeUrl: agent.code_url,
-      onChainSig: agent.on_chain_sig,
-      registeredAt: agent.registered_at,
-      confirmedAt: agent.confirmed_at,
-      verifiedAt: agent.verified_at,
-      expiresAt: agent.expires_at,
-      expired: isExpired,
-      revoked: !!agent.revoked
-    });
+    const publicData = publicAgentResponse(agent);
+    res.json(publicData);
   } catch (error) {
     console.error('Agent lookup error:', error);
     res.status(500).json({ error: 'Internal server error' });
