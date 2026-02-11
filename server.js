@@ -141,15 +141,24 @@ app.get('/', (req, res) => {
 '</html>');
 });
 
-// --- Initialize Solana ---
-initSolana();
+// --- Initialize DB + Solana, then start ---
+const { initDb } = require('./db');
 
-// --- Start Server ---
-app.listen(PORT, () => {
-  console.log('[moltlaunch-verify] Running on port ' + PORT);
-  console.log('[moltlaunch-verify] Admin key: ' + (process.env.ADMIN_KEY ? 'configured' : 'NOT SET'));
-  console.log('[moltlaunch-verify] Colosseum API key: ' + (process.env.COLOSSEUM_API_KEY ? 'configured' : 'NOT SET'));
-  console.log('[moltlaunch-verify] Solana wallet: ' + (process.env.SOLANA_PRIVATE_KEY ? 'configured' : 'NOT SET'));
+async function start() {
+  await initDb();
+  console.log('[moltlaunch-verify] SQLite initialized');
+  initSolana();
+  app.listen(PORT, () => {
+    console.log('[moltlaunch-verify] Running on port ' + PORT);
+    console.log('[moltlaunch-verify] Admin key: ' + (process.env.ADMIN_KEY ? 'configured' : 'NOT SET'));
+    console.log('[moltlaunch-verify] Colosseum API key: ' + (process.env.COLOSSEUM_API_KEY ? 'configured' : 'NOT SET'));
+    console.log('[moltlaunch-verify] Solana wallet: ' + (process.env.SOLANA_PRIVATE_KEY ? 'configured' : 'NOT SET'));
+  });
+}
+
+start().catch(err => {
+  console.error('[moltlaunch-verify] Failed to start:', err);
+  process.exit(1);
 });
 
 module.exports = app;
