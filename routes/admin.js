@@ -13,7 +13,7 @@ function requireAdmin(req, res, next) {
     return res.status(500).json({ error: 'ADMIN_KEY not configured' });
   }
 
-  const providedKey = req.headers['x-admin-key'] || req.query.key;
+  const providedKey = req.headers['x-admin-key'];
   if (!providedKey || providedKey !== adminKey) {
     return res.status(401).json({ error: 'Unauthorized. Provide X-Admin-Key header or ?key= query param.' });
   }
