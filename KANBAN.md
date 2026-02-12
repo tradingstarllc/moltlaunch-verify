@@ -117,7 +117,7 @@
 
 | Task | Assigned To | Status | Notes |
 |------|------------|--------|-------|
-| Self-verify service deployed | MoltLaunch | ✅ Done | verify-api-production.up.railway.app |
+| Self-verify service deployed | MoltLaunch | ✅ Done | proveyour.id |
 | Agent Casino VRF proof PR #3 | MoltLaunch | ✅ Submitted | Awaiting review |
 | Agent Casino security PR #2 | MoltLaunch | ✅ Merged | — |
 | AXLE integration proposal | MoltLaunch | ⏳ Waiting | Issue #3 on cascade-protocol/sati |
