@@ -197,9 +197,6 @@ app.get('/kanban', async (req, res) => {
   } catch (e) { res.status(500).json({ error: 'Kanban file not found' }); }
 });
 
-
-});
-
 // --- Well-known for self-verification (DYNAMIC from DB) ---
 app.get("/.well-known/moltlaunch.json", async (req, res) => {
   try {
