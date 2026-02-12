@@ -197,11 +197,23 @@ app.get('/kanban', async (req, res) => {
   } catch (e) { res.status(500).json({ error: 'Kanban file not found' }); }
 });
 
-// --- Well-known for self-verification ---
-app.get('/.well-known/moltlaunch.json', (req, res) => {
-  res.json({"agentId":"moltlaunch-agent","token":"3bed0dda405e3f6553864e632587dd8f2096fc2d57db0a56ef9e177c697511f7"});
+
 });
 
+// --- Well-known for self-verification (DYNAMIC from DB) ---
+app.get("/.well-known/moltlaunch.json", async (req, res) => {
+  try {
+    const dbModule = require("./db");
+    const agent = dbModule.getAgent("moltlaunch-agent");
+    if (agent && agent.challenge_token) {
+      res.json({ agentId: agent.id, token: agent.challenge_token });
+    } else {
+      res.status(404).json({ error: "No agent token found" });
+    }
+  } catch (e) {
+    res.status(500).json({ error: "Database not ready" });
+  }
+});
 // --- Initialize DB + Solana, then start ---
 const { initDb } = require('./db');
 
