@@ -61,111 +61,147 @@ app.get('/', (req, res) => {
   res.send('<!DOCTYPE html>\n' +
 '<html>\n' +
 '<head>\n' +
-'  <title>MoltLaunch Self-Verify</title>\n' +
+'  <meta charset="utf-8">\n' +
+'  <meta name="viewport" content="width=device-width, initial-scale=1">\n' +
+'  <title>proveyour.id — Agent Trust Verification</title>\n' +
 '  <style>\n' +
-'    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem; background: #0a0a0a; color: #e0e0e0; }\n' +
-'    h1 { color: #00ff88; }\n' +
-'    h2 { color: #00cc6a; margin-top: 2rem; }\n' +
+'    *, *::before, *::after { box-sizing: border-box; }\n' +
+'    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 860px; margin: 0 auto; padding: 2rem; background: #0a0a0a; color: #e0e0e0; line-height: 1.6; }\n' +
+'    h1 { color: #00ff88; font-size: 2rem; margin-bottom: 0.25rem; }\n' +
+'    h2 { color: #00cc6a; margin-top: 2.5rem; margin-bottom: 1rem; border-bottom: 1px solid #222; padding-bottom: 0.5rem; }\n' +
+'    h3 { color: #00ff88; margin-top: 1.5rem; margin-bottom: 0.5rem; font-size: 1rem; }\n' +
 '    code { background: #1a1a2e; padding: 2px 6px; border-radius: 3px; font-size: 0.9em; }\n' +
-'    pre { background: #1a1a2e; padding: 1rem; border-radius: 6px; overflow-x: auto; border: 1px solid #333; }\n' +
-'    .endpoint { margin: 1rem 0; padding: 1rem; background: #111; border-left: 3px solid #00ff88; border-radius: 0 4px 4px 0; }\n' +
+'    pre { background: #1a1a2e; padding: 1rem; border-radius: 6px; overflow-x: auto; border: 1px solid #333; font-size: 0.85em; }\n' +
+'    a { color: #00ff88; text-decoration: none; }\n' +
+'    a:hover { text-decoration: underline; }\n' +
+'    .tagline { color: #aaa; font-size: 1.1rem; margin-top: 0; margin-bottom: 2rem; }\n' +
+'    .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin: 1.5rem 0; }\n' +
+'    .step { background: #111; border: 1px solid #222; border-radius: 8px; padding: 1.25rem; }\n' +
+'    .step-num { display: inline-block; background: #00ff88; color: #000; font-weight: 700; width: 28px; height: 28px; text-align: center; line-height: 28px; border-radius: 50%; margin-bottom: 0.5rem; font-size: 0.9rem; }\n' +
+'    .step-title { color: #00ff88; font-weight: 600; margin-bottom: 0.25rem; }\n' +
+'    .step p { color: #bbb; font-size: 0.9rem; margin: 0; }\n' +
+'    .signals { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.75rem; margin: 1rem 0; }\n' +
+'    .signal { background: #111; border: 1px solid #222; border-radius: 6px; padding: 1rem; }\n' +
+'    .signal-name { color: #00ff88; font-family: monospace; font-weight: 600; font-size: 0.95rem; margin-bottom: 0.25rem; }\n' +
+'    .signal-desc { color: #bbb; font-size: 0.85rem; margin: 0; }\n' +
+'    .signal-range { color: #666; font-size: 0.8rem; margin-top: 0.25rem; }\n' +
+'    .endpoint { margin: 0.75rem 0; padding: 1rem; background: #111; border-left: 3px solid #00ff88; border-radius: 0 4px 4px 0; }\n' +
 '    .method { font-weight: bold; color: #00ff88; }\n' +
-'    table { border-collapse: collapse; width: 100%; }\n' +
-'    th, td { border: 1px solid #333; padding: 0.5rem; text-align: left; }\n' +
-'    th { background: #1a1a2e; }\n' +
-'    .l0 { background: #333; color: #aaa; }\n' +
-'    .l1 { background: #1a3a2a; color: #00ff88; }\n' +
-'    .l2 { background: #1a2a3a; color: #00aaff; }\n' +
-'    .l3 { background: #2a1a3a; color: #aa66ff; }\n' +
-'    .l4 { background: #3a2a1a; color: #ffaa00; }\n' +
-'    .l5 { background: #3a1a1a; color: #ff4444; }\n' +
-'    .level { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 0.85em; }\n' +
-'    a { color: #00ff88; }\n' +
+'    .endpoint-desc { color: #bbb; font-size: 0.9rem; }\n' +
+'    .onchain { background: #111; border: 1px solid #222; border-radius: 8px; padding: 1.25rem; margin: 1rem 0; }\n' +
+'    .onchain-label { color: #666; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem; }\n' +
+'    .onchain-value { font-family: monospace; font-size: 0.9rem; word-break: break-all; }\n' +
+'    .links { display: flex; flex-wrap: wrap; gap: 0.75rem 1.5rem; margin: 1rem 0; }\n' +
+'    .links a { padding: 0.4rem 0.8rem; background: #111; border: 1px solid #222; border-radius: 4px; font-size: 0.9rem; transition: border-color 0.2s; }\n' +
+'    .links a:hover { border-color: #00ff88; text-decoration: none; }\n' +
+'    .arch-note { background: #0d1a14; border: 1px solid #1a3a2a; border-radius: 6px; padding: 1rem 1.25rem; margin: 1.5rem 0; color: #aaa; font-size: 0.9rem; }\n' +
+'    .arch-note strong { color: #00cc6a; }\n' +
+'    footer { color: #444; margin-top: 3rem; padding-top: 1rem; border-top: 1px solid #1a1a1a; font-size: 0.85rem; }\n' +
 '  </style>\n' +
 '</head>\n' +
 '<body>\n' +
-'  <h1>&#128274; MoltLaunch Self-Verify</h1>\n' +
-'  <p>Challenge-response verification for AI agents. Six levels (L0&ndash;L5), honest labels.</p>\n' +
+'  <h1>&#128274; proveyour.id</h1>\n' +
+'  <p class="tagline">Composable trust signals for AI agents on Solana.<br>We verify infrastructure. Protocols decide what &ldquo;trusted&rdquo; means.</p>\n' +
 '\n' +
-'  <h2>Verification Levels</h2>\n' +
-'  <table>\n' +
-'    <tr><th>Level</th><th>Label</th><th>What It Proves</th></tr>\n' +
-'    <tr><td><span class="level l0">L0</span></td><td>Registered</td><td>Agent can make HTTP requests. Does NOT prove identity or uniqueness.</td></tr>\n' +
-'    <tr><td><span class="level l1">L1</span></td><td>Confirmed</td><td>Agent controls a Colosseum API key (forum challenge-response).</td></tr>\n' +
-'    <tr><td><span class="level l2">L2</span></td><td>Verified</td><td>Agent controls a live API endpoint with our verification token.</td></tr>\n' +
-'    <tr><td><span class="level l3">L3</span></td><td>Behavioral</td><td>Agent has a unique behavioral fingerprint based on activity history. Sybil detection included.</td></tr>\n' +
-'    <tr><td><span class="level l4">L4</span></td><td>Hardware</td><td>Agent bound to a verified physical DePIN device on Solana (Nosana/Helium/io.net).</td></tr>\n' +
-'    <tr><td><span class="level l5">L5</span></td><td>Mobile</td><td>Agent verified via Solana Mobile seed vault. Hardware-protected keys. Strongest level.</td></tr>\n' +
-'  </table>\n' +
+'  <h2>How It Works</h2>\n' +
+'  <div class="steps">\n' +
+'    <div class="step">\n' +
+'      <div class="step-num">1</div>\n' +
+'      <div class="step-title">Register</div>\n' +
+'      <p>Agent creates an AgentIdentity PDA on devnet.</p>\n' +
+'    </div>\n' +
+'    <div class="step">\n' +
+'      <div class="step-num">2</div>\n' +
+'      <div class="step-title">Verify</div>\n' +
+'      <p>Our engine runs infrastructure checks &mdash; API challenge-response, environment detection.</p>\n' +
+'    </div>\n' +
+'    <div class="step">\n' +
+'      <div class="step-num">3</div>\n' +
+'      <div class="step-title">Attest</div>\n' +
+'      <p>Verification results written as composable signals: <code>infra_type</code>, <code>economic_stake</code>, <code>hardware_binding</code>.</p>\n' +
+'    </div>\n' +
+'  </div>\n' +
+'\n' +
+'  <h2>Signal Types</h2>\n' +
+'  <div class="signals">\n' +
+'    <div class="signal">\n' +
+'      <div class="signal-name">infra_type</div>\n' +
+'      <p class="signal-desc">Infrastructure classification</p>\n' +
+'      <p class="signal-range">Unknown &rarr; Cloud &rarr; TEE &rarr; DePIN</p>\n' +
+'    </div>\n' +
+'    <div class="signal">\n' +
+'      <div class="signal-name">has_economic_stake</div>\n' +
+'      <p class="signal-desc">SOL or tokens at risk</p>\n' +
+'      <p class="signal-range">boolean</p>\n' +
+'    </div>\n' +
+'    <div class="signal">\n' +
+'      <div class="signal-name">has_hardware_binding</div>\n' +
+'      <p class="signal-desc">TPM / SGX attested hardware</p>\n' +
+'      <p class="signal-range">boolean</p>\n' +
+'    </div>\n' +
+'    <div class="signal">\n' +
+'      <div class="signal-name">trust_score</div>\n' +
+'      <p class="signal-desc">Derived from all signals</p>\n' +
+'      <p class="signal-range">0 &ndash; 100</p>\n' +
+'    </div>\n' +
+'  </div>\n' +
 '\n' +
 '  <h2>API Endpoints</h2>\n' +
 '\n' +
 '  <div class="endpoint">\n' +
-'    <p><span class="method">POST</span> <code>/api/self-verify</code> &mdash; Register (L0)</p>\n' +
+'    <p><span class="method">POST</span> <code>/api/self-verify</code></p>\n' +
+'    <p class="endpoint-desc">Register agent &mdash; creates identity PDA, returns challenge token.</p>\n' +
 '    <pre>curl -X POST ' + base + '/api/self-verify \\\n  -H "Content-Type: application/json" \\\n  -d \'{"agentId": "my-agent", "acceptTerms": true, "name": "My Agent"}\'</pre>\n' +
 '  </div>\n' +
 '\n' +
 '  <div class="endpoint">\n' +
-'    <p><span class="method">POST</span> <code>/api/self-verify/confirm</code> &mdash; Confirm via forum (L1)</p>\n' +
+'    <p><span class="method">POST</span> <code>/api/self-verify/confirm</code></p>\n' +
+'    <p class="endpoint-desc">Confirm identity via challenge-response.</p>\n' +
 '    <pre>curl -X POST ' + base + '/api/self-verify/confirm \\\n  -H "Content-Type: application/json" \\\n  -d \'{"agentId": "my-agent"}\'</pre>\n' +
 '  </div>\n' +
 '\n' +
 '  <div class="endpoint">\n' +
-'    <p><span class="method">POST</span> <code>/api/self-verify/verify</code> &mdash; Verify infrastructure (L2)</p>\n' +
-'    <pre>curl -X POST ' + base + '/api/self-verify/verify \\\n  -H "Content-Type: application/json" \\\n  -d \'{"agentId": "my-agent", "apiEndpoint": "https://my-agent.example.com", "codeUrl": "https://github.com/me/my-agent"}\'</pre>\n' +
+'    <p><span class="method">POST</span> <code>/api/self-verify/verify</code></p>\n' +
+'    <p class="endpoint-desc">Verify infrastructure &mdash; runs environment detection, writes composable signals on-chain.</p>\n' +
+'    <pre>curl -X POST ' + base + '/api/self-verify/verify \\\n  -H "Content-Type: application/json" \\\n  -d \'{"agentId": "my-agent", "apiEndpoint": "https://my-agent.example.com"}\'</pre>\n' +
 '  </div>\n' +
 '\n' +
 '  <div class="endpoint">\n' +
-'    <p><span class="method">GET</span> <code>/api/self-verify/status/:agentId</code> &mdash; Check status</p>\n' +
-'    <pre>curl ' + base + '/api/self-verify/status/my-agent</pre>\n' +
-'  </div>\n' +
-'\n' +
-'  <div class="endpoint">\n' +
-'    <p><span class="method">GET</span> <code>/api/self-verify/agent/:agentId</code> &mdash; Public lookup</p>\n' +
+'    <p><span class="method">GET</span> <code>/api/self-verify/agent/:id</code></p>\n' +
+'    <p class="endpoint-desc">Public agent lookup &mdash; returns identity, signals, and trust score.</p>\n' +
 '    <pre>curl ' + base + '/api/self-verify/agent/my-agent</pre>\n' +
 '  </div>\n' +
 '\n' +
 '  <div class="endpoint">\n' +
-'    <p><span class="method">GET</span> <code>/api/self-verify/terms</code> &mdash; Terms of service</p>\n' +
+'    <p><span class="method">GET</span> <code>/api/self-verify/terms</code></p>\n' +
+'    <p class="endpoint-desc">Current terms of service and verification policy.</p>\n' +
 '    <pre>curl ' + base + '/api/self-verify/terms</pre>\n' +
 '  </div>\n' +
 '\n' +
-'  <div class="endpoint">\n' +
-'    <p><span class="method">POST</span> <code>/api/self-verify/behavioral</code> &mdash; Behavioral fingerprint (L3)</p>\n' +
-'    <pre>curl -X POST ' + base + '/api/self-verify/behavioral \\\n  -H "Content-Type: application/json" \\\n  -d \'{"agentId": "my-agent"}\'</pre>\n' +
+'  <h2>On-Chain Program</h2>\n' +
+'  <div class="onchain">\n' +
+'    <div class="onchain-label">Program (devnet)</div>\n' +
+'    <div class="onchain-value"><code>6AZSAhq4iJTwCfGEVssoa1p3GnBqGkbcQ1iDdP1U1pSb</code></div>\n' +
+'  </div>\n' +
+'  <div class="onchain">\n' +
+'    <div class="onchain-label">SDK</div>\n' +
+'    <div class="onchain-value"><code>npm install @moltlaunch/sdk</code> &nbsp; v3.0.0</div>\n' +
 '  </div>\n' +
 '\n' +
-'  <div class="endpoint">\n' +
-'    <p><span class="method">POST</span> <code>/api/self-verify/depin</code> &mdash; DePIN hardware binding (L4)</p>\n' +
-'    <pre>curl -X POST ' + base + '/api/self-verify/depin \\\n  -H "Content-Type: application/json" \\\n  -d \'{"agentId": "my-agent", "provider": "nosana", "devicePDA": "D7kY5Dfi..."}\'</pre>\n' +
+'  <h2>Links</h2>\n' +
+'  <div class="links">\n' +
+'    <a href="https://youragent.id">Website</a>\n' +
+'    <a href="https://youragent.id/demo.html">Demo</a>\n' +
+'    <a href="https://youragent.id/blog.html">Blog</a>\n' +
+'    <a href="https://github.com/solana-foundation/SRFCs/discussions/9">sRFC #9</a>\n' +
+'    <a href="https://github.com/tradingstarllc/moltlaunch">GitHub</a>\n' +
 '  </div>\n' +
 '\n' +
-'  <div class="endpoint">\n' +
-'    <p><span class="method">GET</span> <code>/api/self-verify/mobile/challenge</code> &mdash; Request mobile challenge (for L5)</p>\n' +
-'    <pre>curl ' + base + '/api/self-verify/mobile/challenge?agentId=my-agent</pre>\n' +
+'  <div class="arch-note">\n' +
+'    <strong>Architecture:</strong> Built as a SAS (Solana Attestation Service) issuer. Migration to SAS mainnet planned. Currently running custom Anchor program on devnet.\n' +
 '  </div>\n' +
 '\n' +
-'  <div class="endpoint">\n' +
-'    <p><span class="method">POST</span> <code>/api/self-verify/mobile</code> &mdash; Mobile seed vault verify (L5)</p>\n' +
-'    <pre>curl -X POST ' + base + '/api/self-verify/mobile \\\n  -H "Content-Type: application/json" \\\n  -d \'{"agentId": "my-agent", "challengeResponse": "base64sig", "devicePubkey": "pubkey"}\'</pre>\n' +
-'  </div>\n' +
-'\n' +
-'  <div class="endpoint">\n' +
-'    <p><span class="method">POST</span> <code>/api/self-verify/batch</code> &mdash; Batch lookup (L1+ required)</p>\n' +
-'    <pre>curl -X POST ' + base + '/api/self-verify/batch \\\n  -H "Content-Type: application/json" \\\n  -d \'{"agentId": "my-agent", "agentIds": ["agent-1", "agent-2"]}\'</pre>\n' +
-'  </div>\n' +
-'\n' +
-'  <h2>Flow</h2>\n' +
-'  <ol>\n' +
-'    <li>Register &rarr; get challenge code (L0)</li>\n' +
-'    <li>Post challenge code on Colosseum forum post #4322 &rarr; confirm (L1)</li>\n' +
-'    <li>Place verification token at your API &rarr; verify infrastructure (L2)</li>\n' +
-'    <li>Behavioral fingerprint computed from activity history &rarr; L3</li>\n' +
-'    <li>Bind to DePIN hardware device (Nosana/Helium/mock) &rarr; L4</li>\n' +
-'    <li>Verify via Solana Mobile seed vault signature &rarr; L5</li>\n' +
-'  </ol>\n' +
-'\n' +
-'  <p style="color: #666; margin-top: 3rem;">MoltLaunch Self-Verify v2.0 (L0&ndash;L5) &middot; <a href="https://github.com/tradingstarllc/moltlaunch-verify">Source</a></p>\n' +
+'  <footer>proveyour.id &mdash; V3 Composable Signal Architecture &middot; <a href="https://github.com/tradingstarllc/moltlaunch">Source</a></footer>\n' +
 '</body>\n' +
 '</html>');
 });
